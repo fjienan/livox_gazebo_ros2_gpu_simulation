@@ -1,6 +1,6 @@
 # Livox GPU Laser Simulation ROS2 Plugin
 
-A ROS2 Gazebo GPU laser plugin specifically designed for Livox LiDAR simulation. Provides high-performance point cloud simulation based on GPU-accelerated ray tracing.
+A ROS2 Gazebo GPU laser plugin specifically designed for Livox LiDAR simulation. Provides high-performance point cloud simulation based on GPU.
 
 > **Note**: Currently only fully tested on **Mid-360**. Configuration files for other models (Avia, HAP, Horizon, Mid-40, Mid-70, Tele) are included but not thoroughly tested.
 
