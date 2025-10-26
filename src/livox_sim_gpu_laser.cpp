@@ -36,12 +36,12 @@
  #include <gazebo/sensors/GpuRaySensor.hh>
  #include <gazebo/sensors/SensorTypes.hh>
  #include <gazebo/transport/transport.hh>
- 
+ #include <cmath>                                  // 添加数学函数支持
  // PointCloud2 message helper
  #include "sensor_msgs/point_cloud2_iterator.hpp"
  
- #include "livox_sim_plugins/livox_sim_gpu_laser.h"
- #include <ignition/math/Rand.hh>
+#include "livox_sim_plugins/livox_sim_gpu_laser.h"
+#include <ignition/math/Rand.hh>
  
  namespace gazebo
  {
@@ -245,21 +245,22 @@ void GazeboRosLaser::OnScan(ConstLaserScanStampedPtr &_msg)
     cloud_msg.is_dense = true;
     cloud_msg.is_bigendian = false;
  
-     sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
-     modifier.setPointCloud2Fields(3,
-         "x", 1, sensor_msgs::msg::PointField::FLOAT32,
-         "y", 1, sensor_msgs::msg::PointField::FLOAT32,
-         "z", 1, sensor_msgs::msg::PointField::FLOAT32);
- 
+   sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+   modifier.setPointCloud2Fields(5,
+       "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+       "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+       "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+       "time", 1, sensor_msgs::msg::PointField::FLOAT32,      // 相对时间戳
+       "intensity", 1, sensor_msgs::msg::PointField::FLOAT32);  // 强度
     // 2. Process samples_per_update_ points in the CSV loop
     const int points_to_process = this->samples_per_update_;
     const size_t pattern_size = this->scan_pattern_.size();
     
     // Use a temporary container to collect valid points, to avoid iterator invalidation issues
-    struct Point3D {
-        float x, y, z;
+    struct Point5D {
+        float x, y, z, time, intensity;
     };
-    std::vector<Point3D> valid_points;
+    std::vector<Point5D> valid_points;
     valid_points.reserve(points_to_process / this->downsample_);
  
     // Get the angle and size information from the original sensor
@@ -306,10 +307,22 @@ void GazeboRosLaser::OnScan(ConstLaserScanStampedPtr &_msg)
         RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "=== CSV angle range ===");
         RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "  - Azimuth: [%.4f, %.4f] rad ([%.1f, %.1f] deg)", 
             min_csv_azimuth, max_csv_azimuth, min_csv_azimuth*180/M_PI, max_csv_azimuth*180/M_PI);
-        RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "  - Zenith: [%.4f, %.4f] rad ([%.1f, %.1f] deg)", 
+        RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "  - Zenith: [%.4f, %.4f] rad ([%.1f, %.1f] deg)",
             min_csv_zenith, max_csv_zenith, min_csv_zenith*180/M_PI, max_csv_zenith*180/M_PI);
-        
+
         first_call = false;
+    }
+
+    // Calculate scan period for timestamp computation
+    const double scan_frequency = 10.0;  // 10 Hz for Livox Mid-360
+    const double scan_period = 1.0 / scan_frequency;  // 0.1 second
+    const double time_per_point = scan_period / pattern_size;
+
+    if (first_call) {
+        RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "=== FastLIO2 Compatible Mode ===");
+        RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "  - Scan frequency: %.1f Hz", scan_frequency);
+        RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "  - Scan period: %.3f seconds", scan_period);
+        RCLCPP_INFO(rclcpp::get_logger("gpu_laser"), "  - Time per point: %.6f seconds", time_per_point);
     }
     // return;
 
@@ -352,8 +365,20 @@ void GazeboRosLaser::OnScan(ConstLaserScanStampedPtr &_msg)
             double y = range * cos(target_point.zenith) * sin(target_point.azimuth);
             double z = range * sin(target_point.zenith);
 
-            // Add to valid points container
-            valid_points.push_back({static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)});
+            // Calculate relative timestamp within scan period
+            double relative_time = static_cast<double>((this->scan_pattern_index_ + i) % pattern_size) * time_per_point;
+
+            // Set intensity (constant for simulation, can be modified)
+            float intensity = 100.0f;  // Constant intensity value
+
+            // Add complete point information with time and intensity fields
+            valid_points.push_back({
+                static_cast<float>(x),
+                static_cast<float>(y),
+                static_cast<float>(z),
+                static_cast<float>(relative_time),
+                intensity
+            });
         } else {
             invalid_range_count++;
             invalid_distance_count++;
@@ -382,12 +407,17 @@ void GazeboRosLaser::OnScan(ConstLaserScanStampedPtr &_msg)
         sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
         sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
         sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
-        
+        sensor_msgs::PointCloud2Iterator<float> iter_t(cloud_msg, "time");
+        sensor_msgs::PointCloud2Iterator<float> iter_intensity(cloud_msg, "intensity");
+
         for (const auto& pt : valid_points) {
             *iter_x = pt.x;
             *iter_y = pt.y;
             *iter_z = pt.z;
-            ++iter_x; ++iter_y; ++iter_z;
+            *iter_t = pt.time;              // Relative timestamp
+            *iter_intensity = pt.intensity;  // Intensity
+
+            ++iter_x; ++iter_y; ++iter_z; ++iter_t; ++iter_intensity;
         }
     }
 

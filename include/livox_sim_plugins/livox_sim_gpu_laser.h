@@ -59,6 +59,7 @@ namespace gazebo
   private:
     void LoadThread();
     void LoadCsvPattern();
+    void DebugPointCloud2(const sensor_msgs::msg::PointCloud2& cloud_msg) const;
 
     physics::WorldPtr world_;
     sensors::GpuRaySensorPtr parent_ray_sensor_;

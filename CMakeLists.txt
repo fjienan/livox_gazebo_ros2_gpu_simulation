@@ -83,10 +83,16 @@ ament_target_dependencies(laser_listener
 # Install targets
 install(TARGETS
   livox_sim_gpu_laser
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib
+)
+
+install(TARGETS
   laser_listener
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 # Install header files
